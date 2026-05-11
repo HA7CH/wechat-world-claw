@@ -2,6 +2,7 @@ name = "wechat-world-push"
 main = "src/index.ts"
 compatibility_date = "2025-05-12"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
 [triggers]
 crons = [
@@ -21,6 +22,10 @@ crons = [
   "0 13 * * *",  # 21:00 CST
   "0 14 * * *",  # 22:00 CST
 ]
+
+[[routes]]
+pattern = "wechat-world-claw.ha7ch.com"
+custom_domain = true
 
 [[d1_databases]]
 binding = "DB"
