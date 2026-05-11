@@ -119,17 +119,40 @@ npm run deploy
 ### 本地开发
 
 ```bash
-# 创建本地 D1 并建表
+# 1. 复制环境变量模板
+cp .dev.vars.example .dev.vars
+# 然后运行 `npm run login` 扫码，.dev.vars 会自动更新
+
+# 2. 创建本地 D1 并建表
 npm run db:migrate:local
 
-# 启动本地 dev server
+# 3. 启动本地 dev server（自动读取 .dev.vars）
 npm run dev
 
-# 手动触发一次推送（本地）
-curl "http://localhost:8787/trigger"
+# 4. 手动触发一次推送（访问落地页 / 测试推送）
+open http://localhost:8787        # 落地页预览
+curl http://localhost:8787/trigger # 手动触发推送
 
-# 类型检查
+# 5. 类型检查
 npm run typecheck
+```
+
+**查看本地 D1 数据**
+
+```bash
+# 查看订阅者列表
+wrangler d1 execute wechat-world-push --local \
+  --command="SELECT user_id, datetime(token_updated_at/1000,'unixepoch','localtime') as updated FROM subscribers"
+
+# 查看推送状态
+wrangler d1 execute wechat-world-push --local \
+  --command="SELECT key, value FROM sync_state"
+```
+
+**查看生产日志**
+
+```bash
+wrangler tail
 ```
 
 ---
