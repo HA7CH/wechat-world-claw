@@ -11,9 +11,11 @@ export interface NewsData {
 }
 
 const DIRECT_SOURCES = [
-  { name: "RFI法广",     url: "https://www.rfi.fr/cn/rss" },
-  { name: "VOA美国之音", url: "https://www.voachinese.com/api/zm_yql-vomx-tpeybti" },
-  { name: "联合国新闻",  url: "https://news.un.org/feed/subscribe/zh/news/all/rss.xml" },
+  { name: "人民网",     url: "https://www.people.com.cn/rss/world.xml" },
+  { name: "人民网",     url: "http://www.people.com.cn/rss/politics.xml" },
+  { name: "联合国新闻", url: "https://news.un.org/feed/subscribe/zh/news/all/rss.xml" },
+  { name: "RFI法广",   url: "https://www.rfi.fr/cn/rss" },
+  { name: "VOA",       url: "https://www.voachinese.com/api/zm_yql-vomx-tpeybti" },
 ];
 
 const GNEWS_URL =
