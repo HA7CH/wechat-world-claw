@@ -150,7 +150,7 @@ export function landingPageHtml(): string {
   <header>
     <div class="emoji">📡</div>
     <h1>中登BOT</h1>
-    <p>每小时为你推送最新国际要闻</p>
+    <p>每两小时为你推送最新国际要闻</p>
   </header>
 
   <div class="card">
@@ -160,7 +160,8 @@ export function landingPageHtml(): string {
     </div>
     <p class="hint">
       用微信扫描上方二维码<br>
-      <strong>向 bot 发送任意一条消息</strong>即完成订阅
+      <strong>向 bot 发送任意一条消息</strong>即完成订阅<br>
+      <span style="color:#aaa">发送「退订」可随时取消</span>
     </p>
   </div>
 
@@ -176,7 +177,7 @@ export function landingPageHtml(): string {
     </div>
     <div class="step">
       <div class="step-num">3</div>
-      <div class="step-text">订阅成功！每小时整点，有新闻时自动推送到这个对话</div>
+      <div class="step-text">订阅成功！每两小时，有新闻时自动推送到这个对话</div>
     </div>
   </div>
 
@@ -186,7 +187,7 @@ export function landingPageHtml(): string {
     <div class="feature-row"><span class="icon">🌏</span>中美关系 · 关税 · 贸易</div>
     <div class="feature-row"><span class="icon">⚔️</span>中东局势 · 以色列 · 伊朗</div>
     <div class="feature-row"><span class="icon">🌍</span>国际要闻 · 乌克兰 · 俄罗斯</div>
-    <div class="feature-row"><span class="icon">🕐</span>每日 08:00–22:00，每小时更新</div>
+    <div class="feature-row"><span class="icon">🕐</span>每日 08:00–22:00，每两小时更新</div>
     <div class="feature-row"><span class="icon">🔕</span>无新内容不推送，不打扰</div>
   </div>
 

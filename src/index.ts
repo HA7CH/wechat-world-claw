@@ -1,8 +1,9 @@
-import { getUpdates, sendTextMessage, type WeixinMessage } from "./wechat";
+import { getUpdates, sendTextMessage, extractText, ILinkError, type WeixinMessage } from "./wechat";
 import {
   getSyncBuf, saveSyncBuf,
-  upsertSubscriber, listSubscribers,
+  upsertSubscriber, deleteSubscriber, listSubscribers,
   getLastPushTime, saveLastPushTime,
+  type Subscriber,
 } from "./db";
 import { fetchNews } from "./sources/news";
 import { formatMessage } from "./formatter";
@@ -12,17 +13,83 @@ export interface Env {
   DB: D1Database;
   WECHAT_TOKEN: string;
   WECHAT_ACCOUNT_ID: string;
+  ALERT_WEBHOOK_URL?: string; // 可选，Discord/Slack webhook，用于 bot session 过期告警
 }
 
-const WELCOME_MSG = "已订阅 📡 世界速报，每小时推送国际要闻。有新消息才推，不刷屏。";
+const WELCOME_MSG = "已订阅 📡 世界速报，每两小时推送国际要闻。有新消息才推，不刷屏。\n\n回复「退订」可随时取消。";
+const UNSUBSCRIBE_MSG = "已取消订阅，感谢使用！👋 如需重新订阅，发送任意消息即可。";
+const RENEWAL_REMINDER = "\n\n📌 您已超过44小时未回复，请回复任意内容（如「好」）以保持订阅，否则明日起将暂停推送。";
 
-async function pollAndRegister(env: Env): Promise<void> {
+const UNSUBSCRIBE_KEYWORDS = ["退订", "取消订阅", "退出", "取消", "unsubscribe"];
+
+const TOKEN_WARN_MS = 44 * 60 * 60 * 1000; // 44h: 开始显示续订提醒
+const TOKEN_TTL_MS  = 48 * 60 * 60 * 1000; // 48h: 停止推送
+
+async function sendAlert(env: Env, message: string): Promise<void> {
+  console.error(`[ALERT] ${message}`);
+  if (!env.ALERT_WEBHOOK_URL) return;
+  try {
+    await fetch(env.ALERT_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: message, text: message }),
+    });
+  } catch (err) {
+    console.error("[alert] webhook failed:", err);
+  }
+}
+
+type BroadcastEntry = { user_id: string; context_token: string; message: string };
+
+async function batchBroadcast(
+  token: string,
+  entries: BroadcastEntry[],
+  batchSize = 10,
+  delayMs = 500,
+): Promise<{ ok: number; failed: number; stale: number }> {
+  let ok = 0, failed = 0, stale = 0;
+
+  for (let i = 0; i < entries.length; i += batchSize) {
+    const batch = entries.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map((e) => sendTextMessage(token, e.user_id, e.context_token, e.message))
+    );
+
+    results.forEach((r, j) => {
+      if (r.status === "fulfilled") {
+        ok++;
+      } else {
+        const err = r.reason;
+        if (err instanceof ILinkError && err.isStaleToken) {
+          stale++;
+          console.log(`[push] stale token for ${batch[j].user_id}`);
+        } else if (err instanceof ILinkError && err.isRateLimit) {
+          failed++;
+          console.warn(`[push] rate limited for ${batch[j].user_id}`);
+        } else {
+          failed++;
+          console.error(`[push] failed for ${batch[j].user_id}:`, err);
+        }
+      }
+    });
+
+    if (i + batchSize < entries.length) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return { ok, failed, stale };
+}
+
+type PollResult = "ok" | "session_expired" | "error";
+
+async function pollAndRegister(env: Env): Promise<PollResult> {
   let syncBuf: string;
   try {
     syncBuf = await getSyncBuf(env.DB);
   } catch (err) {
     console.error("[poll] getSyncBuf failed:", err);
-    return;
+    return "error";
   }
 
   let resp;
@@ -30,7 +97,15 @@ async function pollAndRegister(env: Env): Promise<void> {
     resp = await getUpdates(env.WECHAT_TOKEN, syncBuf, 5_000);
   } catch (err) {
     console.error("[poll] getUpdates failed:", err);
-    return;
+    return "error";
+  }
+
+  if (resp.errcode === -14 || resp.ret === -14) {
+    await sendAlert(
+      env,
+      "⚠️ 中登BOT: Bot session 已过期（errcode -14），请运行 npm run login 重新扫码登录并更新 WECHAT_TOKEN。"
+    );
+    return "session_expired";
   }
 
   if (resp.get_updates_buf && resp.get_updates_buf !== syncBuf) {
@@ -44,6 +119,19 @@ async function pollAndRegister(env: Env): Promise<void> {
   for (const msg of userMsgs) {
     const userId = msg.from_user_id!;
     const contextToken = msg.context_token!;
+    const text = extractText(msg);
+
+    if (UNSUBSCRIBE_KEYWORDS.some((kw) => text.includes(kw))) {
+      try {
+        await deleteSubscriber(env.DB, userId);
+        await sendTextMessage(env.WECHAT_TOKEN, userId, contextToken, UNSUBSCRIBE_MSG);
+        console.log(`[poll] unsubscribed: ${userId}`);
+      } catch (err) {
+        console.error(`[poll] unsubscribe failed for ${userId}:`, err);
+      }
+      continue;
+    }
+
     try {
       const isNew = await upsertSubscriber(env.DB, userId, contextToken);
       if (isNew) {
@@ -56,71 +144,76 @@ async function pollAndRegister(env: Env): Promise<void> {
       console.error(`[poll] failed to register ${userId}:`, err);
     }
   }
+
+  return "ok";
 }
 
 async function runScheduled(env: Env): Promise<void> {
-  // Poll for new subscribers + fetch news + load subscribers in parallel
   const lastPushTime = await getLastPushTime(env.DB).catch(() => 0);
 
-  // pollAndRegister must complete first so D1 has fresh context_tokens
-  const [, newsResult] = await Promise.allSettled([
+  const [pollResult, newsResult] = await Promise.allSettled([
     pollAndRegister(env),
     fetchNews(lastPushTime),
   ]);
-  const subscribersResult = await Promise.allSettled([listSubscribers(env.DB)]).then(r => r[0]);
+
+  if (pollResult.status === "fulfilled" && pollResult.value === "session_expired") {
+    console.log("[push] session expired, skipping push");
+    return;
+  }
 
   const news = newsResult.status === "fulfilled" ? newsResult.value : null;
 
-  // Skip push if no new articles
   if (!news || news.items.length === 0) {
     console.log("[push] no new articles since last push, skipping");
     return;
   }
 
-  if (subscribersResult.status === "rejected") {
-    console.error("[push] listSubscribers failed:", subscribersResult.reason);
-    return;
-  }
-  const subscribers = subscribersResult.value;
+  const subscribers = await listSubscribers(env.DB).catch((err) => {
+    console.error("[push] listSubscribers failed:", err);
+    return null;
+  });
 
-  if (subscribers.length === 0) {
+  if (!subscribers || subscribers.length === 0) {
     console.log("[push] no subscribers, skipping");
     return;
   }
 
-  const message = formatMessage(news);
-  const TOKEN_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours — tune based on empirical testing
   const now = Date.now();
-  const activeSubs = subscribers.filter((sub) => {
-    const ageMs = now - sub.token_updated_at;
-    const ageH = Math.round(ageMs / 36e5);
-    if (ageMs > TOKEN_TTL_MS) {
-      console.log(`[push] skip ${sub.user_id}: token age ${ageH}h > TTL`);
-      return false;
-    }
-    console.log(`[push] token age ${ageH}h for ${sub.user_id}`);
-    return true;
-  });
-  console.log(`[push] ${news.items.length} new items → ${activeSubs.length}/${subscribers.length} active subscriber(s)`);
+  const newsMessage = formatMessage(news);
 
-  const results = await Promise.allSettled(
-    activeSubs.map((sub) =>
-      sendTextMessage(env.WECHAT_TOKEN, sub.user_id, sub.context_token, message)
-    )
+  const activeSubs: Subscriber[] = [];
+  const warningSubs: Subscriber[] = [];
+
+  for (const sub of subscribers) {
+    const ageMs = now - sub.token_updated_at;
+    if (ageMs >= TOKEN_TTL_MS) {
+      const ageH = Math.round(ageMs / 36e5);
+      console.log(`[push] skip ${sub.user_id}: token age ${ageH}h > TTL`);
+    } else if (ageMs >= TOKEN_WARN_MS) {
+      warningSubs.push(sub);
+    } else {
+      activeSubs.push(sub);
+    }
+  }
+
+  console.log(
+    `[push] ${news.items.length} items → active:${activeSubs.length} warning:${warningSubs.length} ` +
+    `expired:${subscribers.length - activeSubs.length - warningSubs.length}`
   );
 
-  let ok = 0;
-  results.forEach((r, i) => {
-    if (r.status === "fulfilled") {
-      ok++;
-    } else {
-      console.error(`[push] failed for ${subscribers[i].user_id}:`, r.reason);
-    }
-  });
+  if (activeSubs.length + warningSubs.length === 0) {
+    console.log("[push] no active subscribers to push to");
+    return;
+  }
 
-  console.log(`[push] done — ${ok}/${activeSubs.length} ok`);
+  const entries: BroadcastEntry[] = [
+    ...activeSubs.map((sub) => ({ user_id: sub.user_id, context_token: sub.context_token, message: newsMessage })),
+    ...warningSubs.map((sub) => ({ user_id: sub.user_id, context_token: sub.context_token, message: newsMessage + RENEWAL_REMINDER })),
+  ];
 
-  // Save push time as the newest article's pubDate (or now)
+  const { ok, failed, stale } = await batchBroadcast(env.WECHAT_TOKEN, entries);
+  console.log(`[push] done — ok:${ok} failed:${failed} stale:${stale}`);
+
   const newestPubMs = Math.max(...news.items.map((it) => it.pubMs).filter(Boolean));
   await saveLastPushTime(env.DB, newestPubMs > 0 ? newestPubMs : Date.now()).catch(() => {});
 }

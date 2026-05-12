@@ -3,6 +3,7 @@ const CHANNEL_VERSION = "wechat-world-push-0.1.0";
 
 export interface WeixinMessage {
   from_user_id?: string;
+  to_user_id?: string;
   context_token?: string;
   message_type?: number; // 1=USER, 2=BOT
   item_list?: Array<{ type?: number; text_item?: { text?: string } }>;
@@ -11,8 +12,39 @@ export interface WeixinMessage {
 export interface GetUpdatesResp {
   ret?: number;
   errcode?: number;
+  errmsg?: string;
   msgs?: WeixinMessage[];
   get_updates_buf?: string;
+}
+
+export class ILinkError extends Error {
+  constructor(
+    public readonly errcode: number,
+    public readonly errmsg: string,
+  ) {
+    super(`iLink errcode ${errcode}: ${errmsg}`);
+    this.name = "ILinkError";
+  }
+
+  get isSessionExpired(): boolean {
+    return this.errcode === -14;
+  }
+
+  get isRateLimit(): boolean {
+    return this.errcode === -2 && this.errmsg.toLowerCase().includes("frequency");
+  }
+
+  get isStaleToken(): boolean {
+    return this.errcode === -2 && !this.errmsg.toLowerCase().includes("frequency");
+  }
+}
+
+export function extractText(msg: WeixinMessage): string {
+  return (msg.item_list ?? [])
+    .filter((item) => item.type === 1)
+    .map((item) => item.text_item?.text ?? "")
+    .join("")
+    .trim();
 }
 
 function randomWechatUin(): string {
@@ -56,7 +88,6 @@ export async function getUpdates(
     return (await resp.json()) as GetUpdatesResp;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      // Timeout — return empty result, preserve existing cursor
       return { ret: 0, msgs: [], get_updates_buf: syncBuf };
     }
     throw err;
@@ -91,10 +122,10 @@ export async function sendTextMessage(
     body,
   });
   if (!resp.ok) throw new Error(`sendmessage HTTP ${resp.status}`);
-  const json = (await resp.json()) as Record<string, unknown>;
+  const json = (await resp.json()) as { ret?: number; errcode?: number; errmsg?: string };
   console.log("[wechat] sendmessage resp:", JSON.stringify(json));
   const errcode = (json.errcode ?? json.ret) as number | undefined;
   if (errcode !== undefined && errcode !== 0) {
-    throw new Error(`sendmessage errcode ${errcode}: ${json.errmsg}`);
+    throw new ILinkError(errcode, json.errmsg ?? "");
   }
 }

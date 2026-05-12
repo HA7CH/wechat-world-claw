@@ -43,8 +43,17 @@ export async function upsertSubscriber(
   return !existing;
 }
 
+export async function deleteSubscriber(db: D1Database, userId: string): Promise<void> {
+  await db
+    .prepare("DELETE FROM subscribers WHERE user_id = ?")
+    .bind(userId)
+    .run();
+}
+
 export async function listSubscribers(db: D1Database): Promise<Subscriber[]> {
-  const result = await db.prepare("SELECT user_id, context_token, created_at, token_updated_at FROM subscribers").all<Subscriber>();
+  const result = await db
+    .prepare("SELECT user_id, context_token, created_at, token_updated_at FROM subscribers")
+    .all<Subscriber>();
   return result.results;
 }
 
