@@ -1,4 +1,42 @@
 const BASE_URL = "https://ilinkai.weixin.qq.com";
+
+export interface QrCodeResponse {
+  qrcode: string;
+  qrcode_img_content: string;
+  ret?: number;
+  errcode?: number;
+}
+
+export type QrCodeStatus =
+  | { status: "wait" | "scaned" | "expired" }
+  | { status: "confirmed"; bot_token: string; ilink_bot_id: string; ilink_user_id: string; baseurl?: string };
+
+export async function getBotQrCode(): Promise<QrCodeResponse> {
+  const resp = await fetch(
+    `${BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3`,
+    { headers: { "iLink-App-ClientVersion": "1" } },
+  );
+  if (!resp.ok) throw new Error(`get_bot_qrcode HTTP ${resp.status}`);
+  return resp.json() as Promise<QrCodeResponse>;
+}
+
+export async function pollQrCodeStatus(qrcode: string, timeoutMs = 4_000): Promise<QrCodeStatus> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(
+      `${BASE_URL}/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`,
+      { headers: { "iLink-App-ClientVersion": "1" }, signal: controller.signal },
+    );
+    if (!resp.ok) throw new Error(`get_qrcode_status HTTP ${resp.status}`);
+    return resp.json() as Promise<QrCodeStatus>;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return { status: "wait" };
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const CHANNEL_VERSION = "wechat-world-push-0.1.0";
 
 export interface WeixinMessage {

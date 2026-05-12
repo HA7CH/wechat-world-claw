@@ -1,5 +1,8 @@
-# 本地开发环境变量（复制为 .dev.vars 并填入真实值）
-# 通过 `npm run login` 扫码后自动写入，无需手动填写
+# 本地开发环境变量 — 复制为 .dev.vars 并填入真实值
+# 运行 `npm run login` 扫码后会自动写入 WECHAT_TOKEN 和 WECHAT_ACCOUNT_ID
 
 WECHAT_TOKEN=your_ilink_bot_token_here
 WECHAT_ACCOUNT_ID=your_bot_account_id@im.bot
+
+# 可选：Discord/Slack webhook，bot session 过期时告警
+# ALERT_WEBHOOK_URL=https://discord.com/api/webhooks/...

@@ -17,7 +17,7 @@ crons = [
 ]
 
 [[routes]]
-pattern = "wechat-world-claw.ha7ch.com"
+pattern = "wwc.ha7ch.com"
 custom_domain = true
 
 [[d1_databases]]
