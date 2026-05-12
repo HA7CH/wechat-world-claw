@@ -3,7 +3,6 @@ import {
   ILinkError, type WeixinMessage,
 } from "./wechat";
 import {
-  getSyncBuf, saveSyncBuf,
   upsertSubscriber, updateSubscriberSyncBuf, updateLastReminder, deleteSubscriber, listSubscribers,
   upsertPending, getPending, listPending, updatePendingSyncBuf, deletePending, cleanupStalePending,
   createQrSession, getQrSession, updateQrSession, cleanupStaleQrSessions,
@@ -16,8 +15,6 @@ import { landingPageHtml, subscribePageHtml } from "./landing";
 
 export interface Env {
   DB: D1Database;
-  WECHAT_TOKEN: string;       // legacy main-bot token (also used as fallback)
-  WECHAT_ACCOUNT_ID: string;
   ALERT_WEBHOOK_URL?: string;
 }
 
@@ -41,23 +38,7 @@ function randomId(): string {
   return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function sendAlert(env: Env, message: string): Promise<void> {
-  console.error(`[ALERT] ${message}`);
-  if (!env.ALERT_WEBHOOK_URL) return;
-  try {
-    await fetch(env.ALERT_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: message, text: message }),
-    });
-  } catch (err) {
-    console.error("[alert] webhook failed:", err);
-  }
-}
 
-function botToken(sub: Subscriber | PendingSubscriber, env: Env): string {
-  return (sub.bot_token && sub.bot_token !== "") ? sub.bot_token : env.WECHAT_TOKEN;
-}
 
 // ── push ─────────────────────────────────────────────────────────────────────
 
@@ -132,65 +113,6 @@ async function pollBot(token: string, syncBuf: string, timeoutMs = 5_000): Promi
   );
 
   return { newSyncBuf, sessionExpired: false, messages };
-}
-
-// ── poll: main bot (legacy subscribers) ──────────────────────────────────────
-
-async function pollMainBot(env: Env): Promise<"ok" | "session_expired" | "error"> {
-  let syncBuf: string;
-  try {
-    syncBuf = await getSyncBuf(env.DB);
-  } catch (err) {
-    console.error("[poll] getSyncBuf failed:", err);
-    return "error";
-  }
-
-  const { newSyncBuf, sessionExpired, messages } = await pollBot(env.WECHAT_TOKEN, syncBuf);
-
-  if (sessionExpired) {
-    await sendAlert(
-      env,
-      "⚠️ 中登BOT: Bot session 已过期（errcode -14），请运行 npm run login 重新扫码登录并更新 WECHAT_TOKEN。"
-    );
-    return "session_expired";
-  }
-
-  if (newSyncBuf) {
-    try { await saveSyncBuf(env.DB, newSyncBuf); } catch { /* non-fatal */ }
-  }
-
-  for (const msg of messages) {
-    const userId = msg.from_user_id!;
-    const contextToken = msg.context_token!;
-    const text = extractText(msg);
-    const token = env.WECHAT_TOKEN;
-
-    if (UNSUBSCRIBE_KEYWORDS.some((kw) => text.includes(kw))) {
-      try {
-        await deleteSubscriber(env.DB, userId);
-        await sendTextMessage(token, userId, contextToken, UNSUBSCRIBE_MSG);
-        console.log(`[poll/main] unsubscribed: ${userId}`);
-      } catch (err) {
-        console.error(`[poll/main] unsubscribe failed for ${userId}:`, err);
-      }
-      continue;
-    }
-
-    try {
-      // For legacy subscribers the bot_token stays empty (uses WECHAT_TOKEN).
-      const isNew = await upsertSubscriber(env.DB, userId, "", contextToken, newSyncBuf ?? syncBuf);
-      if (isNew) {
-        await sendTextMessage(token, userId, contextToken, WELCOME_MSG);
-        console.log(`[poll/main] new subscriber: ${userId}`);
-      } else {
-        console.log(`[poll/main] token refreshed: ${userId}`);
-      }
-    } catch (err) {
-      console.error(`[poll/main] failed to register ${userId}:`, err);
-    }
-  }
-
-  return "ok";
 }
 
 // ── activate one pending subscriber ──────────────────────────────────────────
@@ -309,21 +231,11 @@ async function runScheduled(env: Env): Promise<void> {
 
   const lastPushTime = await getLastPushTime(env.DB).catch(() => 0);
 
-  const [mainResult, newsResult] = await Promise.allSettled([
-    pollMainBot(env),
+  const [newsResult] = await Promise.allSettled([
     fetchNews(lastPushTime),
-  ]);
-
-  // Poll pending and own-bot subscribers in parallel with the rest.
-  await Promise.allSettled([
     pollPendingSubscribers(env),
     pollOwnBotSubscribers(env),
   ]);
-
-  const mainExpired = mainResult.status === "fulfilled" && mainResult.value === "session_expired";
-  if (mainExpired) {
-    console.log("[push] main bot session expired — own-bot subscribers will still be pushed");
-  }
 
   const news = newsResult.status === "fulfilled" ? newsResult.value : null;
   if (!news || news.items.length === 0) {
@@ -350,7 +262,7 @@ async function runScheduled(env: Env): Promise<void> {
 
   for (const sub of subscribers) {
     const ageMs = now - sub.token_updated_at;
-    const tok = botToken(sub, env);
+    const tok = sub.bot_token;
 
     if (ageMs >= TOKEN_TTL_MS) {
       skipped++;
