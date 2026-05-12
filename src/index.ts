@@ -45,9 +45,13 @@ async function pollAndRegister(env: Env): Promise<void> {
     const userId = msg.from_user_id!;
     const contextToken = msg.context_token!;
     try {
-      await upsertSubscriber(env.DB, userId, contextToken);
-      await sendTextMessage(env.WECHAT_TOKEN, userId, contextToken, WELCOME_MSG);
-      console.log(`[poll] subscribed: ${userId}`);
+      const isNew = await upsertSubscriber(env.DB, userId, contextToken);
+      if (isNew) {
+        await sendTextMessage(env.WECHAT_TOKEN, userId, contextToken, WELCOME_MSG);
+        console.log(`[poll] new subscriber: ${userId}`);
+      } else {
+        console.log(`[poll] token refreshed: ${userId}`);
+      }
     } catch (err) {
       console.error(`[poll] failed to register ${userId}:`, err);
     }

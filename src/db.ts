@@ -19,11 +19,16 @@ export async function saveSyncBuf(db: D1Database, buf: string): Promise<void> {
     .run();
 }
 
+// Returns true if this is a brand-new subscriber (first message ever)
 export async function upsertSubscriber(
   db: D1Database,
   userId: string,
   contextToken: string
-): Promise<void> {
+): Promise<boolean> {
+  const existing = await db
+    .prepare("SELECT 1 FROM subscribers WHERE user_id = ?")
+    .bind(userId)
+    .first();
   const now = Date.now();
   await db
     .prepare(
@@ -35,6 +40,7 @@ export async function upsertSubscriber(
     )
     .bind(userId, contextToken, now, now)
     .run();
+  return !existing;
 }
 
 export async function listSubscribers(db: D1Database): Promise<Subscriber[]> {

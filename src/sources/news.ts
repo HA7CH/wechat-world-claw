@@ -11,8 +11,7 @@ export interface NewsData {
 }
 
 const DIRECT_SOURCES = [
-  { name: "人民网",     url: "https://www.people.com.cn/rss/world.xml" },
-  { name: "人民网",     url: "http://www.people.com.cn/rss/politics.xml" },
+  { name: "中国新闻网", url: "http://www.chinanews.com.cn/rss/world.xml" },
   { name: "联合国新闻", url: "https://news.un.org/feed/subscribe/zh/news/all/rss.xml" },
   { name: "RFI法广",   url: "https://www.rfi.fr/cn/rss" },
   { name: "VOA",       url: "https://www.voachinese.com/api/zm_yql-vomx-tpeybti" },
@@ -31,7 +30,10 @@ function stripHtml(s: string): string {
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&").replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ").trim();
+    .replace(/\s+/g, " ").trim()
+    // Strip 中新社 dateline boilerplate: "中新社XX5月12日电 (记者 XX)"
+    .replace(/^中新[社网][^一-鿿]*?[电]\s*(\([^)]+\))?\s*/, "")
+    .trim();
 }
 
 function truncate(s: string, n: number): string {
