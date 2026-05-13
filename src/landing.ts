@@ -75,10 +75,34 @@ export function landingPageHtml(): string {
     </div>
 
     <div class="section">
-      <h2>做到了什么</h2>
+      <h2>时间线</h2>
       <div class="item">
         <div class="dot"></div>
-        <p>48 小时内从零跑通：多 bot 订阅流程、RSS 聚合 + 关键词排序、图片渲染（Satori + resvg）、AES-128-ECB 加密上传、QR 码生成、cron 广播、退订保活提醒、全链路部署在 Cloudflare Workers + D1 + KV。跑起来了，也推出去了，37 个订阅者。</p>
+        <p><strong>19:00</strong> &nbsp;验证想法。</p>
+      </div>
+      <div class="item">
+        <div class="dot"></div>
+        <p><strong>22:00</strong> &nbsp;出 demo。</p>
+      </div>
+      <div class="item">
+        <div class="dot"></div>
+        <p><strong>00:00</strong> &nbsp;上线。</p>
+      </div>
+      <div class="item">
+        <div class="dot"></div>
+        <p><strong>02:00</strong> &nbsp;74 个订阅者。</p>
+      </div>
+      <div class="item">
+        <div class="dot"></div>
+        <p><strong>次日</strong> &nbsp;验证不通过，决定 drop。</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>技术栈</h2>
+      <div class="item">
+        <div class="dot"></div>
+        <p>多 bot 订阅流程、RSS 聚合 + 关键词排序、图片渲染（Satori + resvg + custom layout）、AES-128-ECB 加密上传、QR 码生成、cron 广播、退订保活提醒。全链路跑在 Cloudflare Workers + D1 + KV 上，0 台服务器，$0 月费。</p>
       </div>
     </div>
 
