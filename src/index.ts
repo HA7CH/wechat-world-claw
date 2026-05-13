@@ -366,7 +366,13 @@ async function loadBroadcastResults(env: Env): Promise<{ push_at: number; result
   }
 }
 
+const BROADCAST_PAUSED = true; // 项目已暂停 — 恢复时改为 false
+
 async function runScheduled(env: Env, forceSinceMs?: number): Promise<void> {
+  if (BROADCAST_PAUSED) {
+    console.log("[push] broadcast paused — set BROADCAST_PAUSED=false to re-enable");
+    return;
+  }
   // Cleanup stale sessions/pending (8-minute QR expiry + buffer; 24h pending TTL).
   await Promise.allSettled([
     cleanupStaleQrSessions(env.DB, 15 * 60 * 1000),
