@@ -78,19 +78,19 @@ export function landingPageHtml(): string {
       <h2>时间线</h2>
       <div class="item">
         <div class="dot"></div>
-        <p><strong>19:00</strong> &nbsp;验证想法。</p>
+        <p><strong>07:00</strong> &nbsp;验证想法。</p>
       </div>
       <div class="item">
         <div class="dot"></div>
-        <p><strong>22:00</strong> &nbsp;出 demo。</p>
+        <p><strong>10:00</strong> &nbsp;出 demo。</p>
       </div>
       <div class="item">
         <div class="dot"></div>
-        <p><strong>00:00</strong> &nbsp;上线。</p>
+        <p><strong>12:00</strong> &nbsp;上线。</p>
       </div>
       <div class="item">
         <div class="dot"></div>
-        <p><strong>02:00</strong> &nbsp;74 个订阅者。</p>
+        <p><strong>14:00</strong> &nbsp;74 个订阅者。</p>
       </div>
       <div class="item">
         <div class="dot"></div>
@@ -108,6 +108,8 @@ export function landingPageHtml(): string {
 
     <footer>
       <a href="https://ha7ch.com">ha7ch.com</a>
+      &nbsp;·&nbsp;
+      <a href="https://github.com/HA7CH/wechat-world-claw">GitHub</a>
     </footer>
   </div>
 </body>

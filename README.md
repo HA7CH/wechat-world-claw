@@ -1,247 +1,156 @@
-# 📡 中登BOT — 微信国际要闻推送
+# 📡 中登BOT — WeChat iLink 国际要闻推送
 
-> 给你老爹一个掌握全球局势的微信ClawBot
-
-**Live:** [wwc.ha7ch.com](https://wwc.ha7ch.com)
-
-每两小时自动推送国际要闻到微信，无需安装任何 App。
+> **项目状态：已停止（2026-05-13）**  
+> 复盘页面：[wwc.ha7ch.com](https://wwc.ha7ch.com) · 代码照旧，感兴趣的自取。
 
 ---
 
-## 功能
+## 是什么
 
-- 🕐 **每两小时推送**（北京时间 08:00–22:00）
-- 📰 **多源聚合**：RFI法广 · VOA美国之音 · 联合国新闻 · BBC中文 · 联合早报 · 澎湃 · 虎嗅 · 36氪
-- 🎯 **热点优先**：特朗普、中美关系、中东局势、乌克兰……智能排序
-- 🔕 **无新内容不推送**，不骚扰
-- 💬 **每人独立 bot**，互不干扰
-- 🔄 **保活机制**：36h 温馨提醒，44h 独立催活，48h 自动暂停
+一个 WeChat bot，每两小时推送一条国际要闻聚合文本到订阅用户的微信。
 
-## 订阅方式
+- 多源 RSS 聚合（联合国新闻、联合早报、澎湃新闻、虎嗅、36氪……）
+- 关键词排序（中美、台湾、中东、降息……）
+- 每人一个专属 bot，互不干扰
+- 全托管在 Cloudflare Workers + D1 + KV，$0 月费
+- 24 小时内从 0 到 74 个订阅者
 
-1. 访问 [wwc.ha7ch.com](https://wwc.ha7ch.com)，点击「立即订阅」
-2. 用微信扫描二维码
-3. **立即**（2分钟内）在微信向机器人发送任意消息（如「你好」）
-4. 订阅成功！收到欢迎语 + 最新一期新闻
+## 为什么停了
 
-> ⚠️ 扫码后请在 **2 分钟内** 发消息，否则 bot token 过期需重新扫
+1. **微信内容审核**：外媒（BBC/RFI/VOA）的链接和标题被直接拦截，用户看到「请稍后再试」
+2. **iLink context_token 真实寿命约 12–14 小时**（不是文档暗示的那样长）：用户超过半天没跟 bot 交互，token 就失效，之后什么都发不出去
+3. **CDN 不稳定**：图片广播走 WeChat 自家 CDN，间歇性 500，改成纯文字解决了一部分，但上面两个问题没法绕
+
+## 时间线
+
+```
+07:00  验证想法
+10:00  出 demo
+12:00  上线
+14:00  74 个订阅者
+次日   验证不通过，决定 drop
+```
 
 ---
 
-## 技术架构
+## 架构
 
 ```
-┌──────────────────────────────────────────────┐
-│              Cloudflare Workers              │
-│                                              │
-│  GET /               落地页                  │
-│  GET /subscribe      生成专属 QR + 会话       │
-│  GET /subscribe/status  轮询扫码状态 + 激活   │
-│  GET /trigger        手动触发（调试用）        │
-│                                              │
-│  Cron (每2h, 08:00–22:00 CST)               │
-│    pollMainBot()       主 bot 轮询（旧用户）  │
-│    pollPending()       激活待扫码用户         │
-│    pollOwnBot()        刷新各人 context token │
-│    fetchNews()         并行拉取 RSS           │
-│    batchBroadcast()    每人用自己的 bot 推送  │
-│                                              │
-│  D1 (SQLite)                                 │
-│    subscribers         正式订阅者             │
-│    pending_subscribers 已扫码待激活           │
-│    qr_sessions         QR 会话状态            │
-│    sync_state          游标 + 上次推送时间    │
-└──────────────────────────────────────────────┘
+Cloudflare Workers (TypeScript)
+│
+├── HTTP
+│   ├── GET /                    落地页（现已改为复盘页）
+│   ├── GET /subscribe           生成 QR + 会话
+│   ├── GET /subscribe/status    轮询扫码状态 + 实时激活
+│   ├── GET /trigger-sync?force  同步触发广播（含返回值）
+│   ├── GET /poll-pending        手动激活卡住的 pending 用户
+│   ├── GET /status              查看上次广播每用户结果
+│   ├── GET /r/:id               短链 302 重定向（未启用于广播）
+│   └── GET /test-*              调试端点
+│
+└── Cron（已注释，恢复时取消注释 wrangler.toml）
+    每 2h (UTC 0,2,4,6,8,10,12,14)
+    → fetchNews(sinceLastPush)
+    → 无新内容 → 跳过
+    → 有 → 按 token 年龄分组广播
+        < 8h   → 正常推文本新闻
+        8–11h  → 新闻 + 保活提醒
+        11–14h → 只发催活消息
+        > 14h  → 跳过（token 已死）
+
+Cloudflare D1 (SQLite)
+    subscribers         已激活订阅者（bot_token + context_token）
+    pending_subscribers 已扫码、等待发第一条消息的用户
+    qr_sessions         QR 会话（8 分钟有效期）
+    sync_state          上次推送时间 + 上次广播结果
+
+Cloudflare KV (IMAGE_CACHE binding)
+    latest              最新一张推送图（24h TTL，/preview 端点用）
+    url:<id>            短链映射（30 天 TTL）
 ```
-
-### 订阅流程
-
-```
-用户访问 /subscribe
-  → 服务器调 WeChat iLink API 生成专属 QR
-  → 用户扫码（确认后立即触发 25s 密集轮询）
-  → 用户在微信发消息 → 拿到 context_token
-  → 激活：发欢迎语 + 最新一期新闻
-```
-
-### 推送流程
-
-```
-Cron 触发
-  → fetchNews(lastPushTime)  // 只取新文章
-  → 无新文章 → 跳过
-  → 有新文章 → 按订阅者状态分组：
-      0–36h   → 正常推新闻
-      36–44h  → 新闻 + 温和提醒（保活）
-      44–48h  → 单独发催活消息
-      >48h    → 跳过（token 已失效）
-  → 每人用自己的 bot_token 发送
-```
-
-**技术栈**
-
-| 组件 | 选型 |
-|---|---|
-| 运行时 | Cloudflare Workers (TypeScript) |
-| 数据库 | Cloudflare D1 (SQLite) |
-| 定时任务 | Cloudflare Cron Triggers |
-| 消息通道 | WeChat iLink Bot Protocol（逆向）|
-| 新闻来源 | RSS 多源聚合 |
 
 ---
 
-## 数据来源
+## 本地跑起来
 
-| 来源 | 类型 |
-|---|---|
-| RFI 法广 | 国际时政 |
-| VOA 美国之音 | 国际时政 |
-| 联合国新闻 | 国际组织 |
-| BBC 中文 | 国际综合 |
-| 联合早报 | 亚太视角 |
-| 澎湃新闻 | 国内外时政 |
-| 虎嗅网 | 财经科技 |
-| 36氪 | 财经科技 |
+### 前置
 
----
-
-## 自部署指南
-
-### 前置条件
-
-- [Cloudflare 账户](https://cloudflare.com)（免费套餐即可）
 - Node.js ≥ 20
-- 微信账号（用于扫码登录主 bot）
+- Cloudflare 账号（免费套餐够用）
+- `npm install -g wrangler`
 
 ### 步骤
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/LAWTED/wechat-world-push.git
-cd wechat-world-push
+git clone https://github.com/HA7CH/wechat-world-claw.git
+cd wechat-world-claw
 npm install
 
-# 2. 创建 D1 数据库
+# 1. 创建 D1 数据库
 npx wrangler d1 create wechat-world-push
-# 把输出的 database_id 填入 wrangler.toml
+# 把返回的 database_id 填入 wrangler.toml
 
-# 3. 建表（生产环境）
+# 2. 创建 KV namespace
+npx wrangler kv namespace create IMAGE_CACHE
+# 把返回的 id 填入 wrangler.toml
+
+# 3. 建表
 npx wrangler d1 execute wechat-world-push --remote --file=schema.sql
 
-# 4. 登录主 bot（扫码授权，token 写入 .dev.vars）
-npm run login
+# 4. 恢复 cron（取消注释 wrangler.toml 里的 [triggers] 块）
 
-# 5. 上传 Secrets 到 Cloudflare
-npx wrangler secret put WECHAT_TOKEN
-npx wrangler secret put WECHAT_ACCOUNT_ID
-
-# 6. 部署
+# 5. 部署
 npx wrangler deploy
 ```
 
-### 环境变量
+### 关键配置（wrangler.toml）
 
-| 变量 | 来源 | 说明 |
-|---|---|---|
-| `WECHAT_TOKEN` | `npm run login` 自动写入 | 主 bot 鉴权 token（约 48h 有效） |
-| `WECHAT_ACCOUNT_ID` | `npm run login` 自动写入 | 主 bot 账号 ID |
-| `ALERT_WEBHOOK_URL` | 可选，手动填入 | Discord/Slack webhook，token 过期时告警 |
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "wechat-world-push"
+database_id = "<你的 database_id>"
 
-> ⚠️ `.dev.vars` 已加入 `.gitignore`，请勿提交到 Git
-
-### 本地开发
-
-```bash
-# 复制环境变量模板
-cp .dev.vars.example .dev.vars
-npm run login  # 扫码，自动写入 .dev.vars
-
-# 建本地 D1 表
-npx wrangler d1 execute wechat-world-push --local --file=schema.sql
-
-# 启动本地 dev server
-npm run dev
-
-# 手动触发推送
-curl http://localhost:8787/trigger
-
-# 类型检查
-npm run typecheck
+[[kv_namespaces]]
+binding = "IMAGE_CACHE"
+id = "<你的 kv_id>"
 ```
 
-### Token 过期处理
-
-主 bot token 约 48 小时失效，届时会收到告警（若配置了 webhook）。
-
-```bash
-# 重新登录，刷新 token
-npm run login
-
-# 上传新 token 并重新部署
-npx wrangler secret put WECHAT_TOKEN
-npx wrangler secret put WECHAT_ACCOUNT_ID
-npx wrangler deploy
-```
-
-### 常用查询
-
-```bash
-# 查看订阅人数
-npx wrangler d1 execute wechat-world-push --remote \
-  --command="SELECT COUNT(*) as 正式订阅 FROM subscribers; SELECT COUNT(*) as 待激活 FROM pending_subscribers;"
-
-# 查看最近加入的订阅者
-npx wrangler d1 execute wechat-world-push --remote \
-  --command="SELECT user_id, datetime(created_at/1000,'unixepoch','+8 hours') as joined FROM subscribers ORDER BY created_at DESC LIMIT 10;"
-
-# 查看上次推送时间
-npx wrangler d1 execute wechat-world-push --remote \
-  --command="SELECT key, value FROM sync_state;"
-
-# 实时日志
-npx wrangler tail
-```
+不需要任何 secret，bot token 是用户订阅时通过 WeChat iLink API 动态颁发的，存在 D1 里。
 
 ---
 
-## 项目结构
+## 已知坑（踩过的）
 
-```
-src/
-  index.ts          # Worker 入口，HTTP 路由 + cron handler
-  wechat.ts         # WeChat iLink 客户端（getupdates / sendmessage / QR 生成）
-  db.ts             # D1 数据库操作
-  formatter.ts      # 消息格式化
-  landing.ts        # 落地页 + 订阅页 HTML
-  sources/
-    news.ts         # RSS 拉取 + 解析 + 相关性排序
-schema.sql          # D1 建表语句（含 migration 注释）
-scripts/
-  login.mts         # 微信扫码登录，写入 .dev.vars
-wrangler.toml       # Cloudflare Workers 配置
-```
+| 问题 | 表现 | 原因 |
+|---|---|---|
+| 外媒链接/标题被拦 | 「请稍后再试」永远卡住 | 微信内容审核 |
+| 短链被拦 | 同上 | 5 个 `wwc.ha7ch.com/r/` 短链触发反 spam |
+| 大批量图片广播失败 | `iLink -2` 80% 失败 | WeChat CDN 频控，改文本广播解决 |
+| context_token 14h 死亡 | `iLink -2` 无错误信息 | iLink 实际 TTL ≠ 文档推测值；代码里 `TOKEN_TTL_MS = 14h` |
+| 注册激活不成功 | 用户扫码但收不到欢迎消息 | `handleSubscribeStatus` 曾被改成只读，不再主动调 `tryActivatePending`；已修复 |
+| 多次重新扫码导致多个孤儿 bot | 微信里出现多个同名 bot | 每次扫码产生新 bot_token，旧的自动作废 |
 
 ---
 
 ## 推送样例
 
 ```
-📡 世界速报 · 05/12 16:00 北京时间
+📡 世界速报 · 05/13 08:01 北京时间
 ─────────────────
 
 【特朗普宣布对中国商品暂缓加征关税90天】
-美国总统特朗普周一签署行政令，宣布在贸易谈判期间暂停对价值约2400亿美元
-中国商品征收的部分额外关税，此前双方谈判代表于日内瓦达成初步框架协议。
-— 法新社
+美国总统特朗普签署行政令，宣布在贸易谈判期间暂停对华额外关税……
+https://m.thepaper.cn/detail/33169610
+— 澎湃新闻
 
-【以色列对加沙北部发动新一轮空袭，造成至少23人死亡】
-以色列国防军周一证实，其空军对加沙城及附近难民营发动定点清除行动，
-目标为哈马斯武装指挥官。加沙卫生部称死亡人数已上升至23人。
-— VOA美国之音
+【以色列对加沙发动新一轮空袭，至少23人死亡】
+...
+— 联合国新闻
 ```
 
 ---
 
 ## License
 
-MIT
+MIT — 代码可以随便用，但微信的 iLink 协议是逆向所得，使用风险自负。
