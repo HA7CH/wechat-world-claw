@@ -124,6 +124,13 @@ export async function listSubscribers(db: D1Database): Promise<Subscriber[]> {
   return result.results;
 }
 
+export async function getSubscriber(db: D1Database, userId: string): Promise<Subscriber | null> {
+  return db
+    .prepare("SELECT user_id, bot_token, context_token, sync_buf, created_at, token_updated_at, last_reminder_at FROM subscribers WHERE user_id = ?")
+    .bind(userId)
+    .first<Subscriber>();
+}
+
 export async function updateLastReminder(db: D1Database, userId: string): Promise<void> {
   await db
     .prepare("UPDATE subscribers SET last_reminder_at = ? WHERE user_id = ?")

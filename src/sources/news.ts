@@ -11,12 +11,12 @@ export interface NewsData {
 }
 
 const SOURCES = [
-  // 国际新闻（现有稳定源）
-  { name: "RFI法广",     url: "https://www.rfi.fr/cn/rss" },
-  { name: "VOA美国之音", url: "https://www.voachinese.com/api/zm_yql-vomx-tpeybti" },
+  // 外媒暂停（2026-05-13：微信内容审核拦截外媒链接/标题，恢复前需研究绕过方案）
+  // { name: "RFI法广",     url: "https://www.rfi.fr/cn/rss" },
+  // { name: "VOA美国之音", url: "https://www.voachinese.com/api/zm_yql-vomx-tpeybti" },
+  // { name: "BBC中文",     url: "https://plink.anyfeeder.com/bbc/cn" },
   { name: "联合国新闻",  url: "https://news.un.org/feed/subscribe/zh/news/all/rss.xml" },
   // 新增国际/时政源
-  { name: "BBC中文",     url: "https://plink.anyfeeder.com/bbc/cn" },
   { name: "联合早报",    url: "https://plink.anyfeeder.com/zaobao/realtime/world" },
   { name: "澎湃新闻",   url: "https://plink.anyfeeder.com/thepaper" },
   // 财经科技源（官方原生 RSS，最稳定）
@@ -46,10 +46,11 @@ function stripHtml(s: string): string {
   return s
     .replace(/<!\[CDATA\[/g, "")
     .replace(/\]\]>/g, "")
-    .replace(/<[^>]+>/g, " ")
+    // Decode entities first so &lt;p&gt; doesn't survive tag stripping
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&").replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+    .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ").trim();
 }
 

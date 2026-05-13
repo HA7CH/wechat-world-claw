@@ -129,36 +129,18 @@ export function landingPageHtml(): string {
       <div class="step-num">3</div>
       <div class="step-text">订阅成功！每两小时，有新闻时自动推送</div>
     </div>
+    <p style="margin-top:16px;padding:12px 14px;background:#fff8e1;border-radius:10px;font-size:0.82rem;color:#888;line-height:1.6">
+      💡 微信显示「Unable to connect to OpenClaw」属正常现象，不影响推送，忽略即可
+    </p>
   </div>
 
-  <div class="features">
-    <h3>内容涵盖</h3>
-    <div class="feature-row"><span class="icon">🇺🇸</span>美国政局 · 特朗普最新动态</div>
-    <div class="feature-row"><span class="icon">🌏</span>中美关系 · 关税 · 贸易</div>
-    <div class="feature-row"><span class="icon">⚔️</span>中东局势 · 以色列 · 伊朗</div>
-    <div class="feature-row"><span class="icon">🌍</span>国际要闻 · 乌克兰 · 俄罗斯</div>
-    <div class="feature-row"><span class="icon">🕐</span>每日 08:00–22:00，每两小时更新</div>
-    <div class="feature-row"><span class="icon">🔕</span>无新内容不推送，不打扰</div>
-  </div>
-
-  <div class="preview">
-    <h3>推送样例</h3>
-    <div class="msg-bubble">📡 世界速报 · 05/12 15:00 北京时间
-─────────────────
-
-【特朗普宣布对中国商品暂缓加征关税90天】
-美国总统特朗普周一签署行政令，宣布在贸易谈判期间暂停对价值约2400亿美元中国商品征收的部分额外关税，此前双方谈判代表于日内瓦达成初步框架协议。
-— 法新社
-
-【以色列对加沙北部发动新一轮空袭，造成至少23人死亡】
-以色列国防军周一证实，其空军对加沙城及附近难民营发动定点清除行动，目标为哈马斯武装指挥官。加沙卫生部称死亡人数已上升至23人，其中包括多名平民。
-— VOA美国之音</div>
-  </div>
-
-  <footer>
-    中登BOT · <a href="${SITE_URL}" style="color:#bbb">${SITE_URL.replace('https://','')}</a><br>
-    内容来自 RFI法广、VOA美国之音、联合国新闻等公开来源
+  <footer style="margin:28px 0 24px;text-align:center;padding:0 20px">
+    <p style="font-size:0.76rem;color:#bbb">由 <a href="https://ha7ch.com" style="color:#bbb">ha7ch.com</a> 开发</p>
+    <p style="font-size:0.72rem;color:#ccc;margin-top:6px;line-height:1.6">
+      「中登」并非贬义，取「中文登陆全球资讯」之意
+    </p>
   </footer>
+
 </body>
 </html>`;
 }
@@ -241,7 +223,7 @@ export function subscribePageHtml(sessionId: string, qrUrl: string): string {
           setStatus('✅ 订阅成功！新闻推送已开始', 'ok');
           qrWrap.style.opacity = '0.3';
         } else if (data.status === 'confirmed') {
-          setStatus('✓ 扫码成功！请立即在微信向机器人发送「你好」（请在2分钟内完成）', 'ok');
+          setStatus('✓ 扫码成功！请在微信向机器人发送「你好」（请在5分钟内完成）', 'ok');
           qrWrap.style.opacity = '0.3';
         } else if (data.status === 'new_qr') {
           qrImg.src = data.qr_url;
@@ -251,6 +233,10 @@ export function subscribePageHtml(sessionId: string, qrUrl: string): string {
           qrWrap.classList.add('expired');
           qrWrap.onclick = () => { window.location.href = '/subscribe'; };
           setStatus('二维码已过期', '');
+        } else if (data.status === 'timed_out') {
+          done = true;
+          setStatus('⚠️ 订阅超时，正在跳转重试…', 'warn');
+          setTimeout(() => { window.location.href = '/subscribe'; }, 2000);
         }
       } catch (e) {
         // network error — keep retrying

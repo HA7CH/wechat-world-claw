@@ -4,17 +4,21 @@ compatibility_date = "2025-05-12"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
-[triggers]
-crons = [
-  "0 0 * * *",   # 08:00 CST
-  "0 2 * * *",   # 10:00 CST
-  "0 4 * * *",   # 12:00 CST
-  "0 6 * * *",   # 14:00 CST
-  "0 8 * * *",   # 16:00 CST
-  "0 10 * * *",  # 18:00 CST
-  "0 12 * * *",  # 20:00 CST
-  "0 14 * * *",  # 22:00 CST
-]
+[limits]
+cpu_ms = 30000
+
+# 项目已暂停（2026-05-13）—— 恢复时取消注释
+# [triggers]
+# crons = [
+#   "0 0 * * *",   # 08:00 CST
+#   "0 2 * * *",   # 10:00 CST
+#   "0 4 * * *",   # 12:00 CST
+#   "0 6 * * *",   # 14:00 CST
+#   "0 8 * * *",   # 16:00 CST
+#   "0 10 * * *",  # 18:00 CST
+#   "0 12 * * *",  # 20:00 CST
+#   "0 14 * * *",  # 22:00 CST
+# ]
 
 [[routes]]
 pattern = "wwc.ha7ch.com"
@@ -24,3 +28,7 @@ custom_domain = true
 binding = "DB"
 database_name = "wechat-world-push"
 database_id = "c9750205-e088-4c9a-a30e-44d47da3fbfd"
+
+[[kv_namespaces]]
+binding = "IMAGE_CACHE"
+id = "65872fb19c5b440e8fd47fc4b4a504dc"
